@@ -1,0 +1,1407 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>매출 대비 쿠폰 사용 비중 및 권유 고저도 점검 리포트</title>
+  <!-- Pretendard Font -->
+  <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- html2canvas for PNG Export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <style>
+    :root {
+      --lime: #82DC28;
+      --coral: #FF7878;
+      --ink: #111827;
+    }
+    body {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      background-color: #F3F4F6;
+      color: #111827;
+    }
+    .tabular-nums {
+      font-variant-numeric: tabular-nums;
+    }
+    /* 옵션 C: 칼각 스위스 인포그래픽 그리드 스타일 */
+    .swiss-box {
+      background: #FFFFFF;
+      border: 2px solid #111827;
+    }
+    .swiss-header {
+      background: #111827;
+      color: #FFFFFF;
+    }
+    .bg-lime-brand {
+      background-color: #82DC28;
+    }
+    .text-lime-brand {
+      color: #82DC28;
+    }
+    .bg-coral-brand {
+      background-color: #FF7878;
+    }
+    .text-coral-brand {
+      color: #FF7878;
+    }
+    /* 관리자 입력 셀 스타일 */
+    .admin-input {
+      background-color: #F8FAFC;
+      border: 1.5px solid #94A3B8;
+      padding: 3px 6px;
+      font-weight: 700;
+      color: #111827;
+      transition: all 0.12s ease;
+    }
+    .admin-input:focus {
+      background-color: #FFFFFF;
+      border-color: #111827;
+      box-shadow: 2px 2px 0px #82DC28;
+      outline: none;
+    }
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    /* 이미지 캡처 및 읽기 전용 배포 모드 제어 */
+    .exporting .no-export,
+    .readonly-mode .admin-only {
+      display: none !important;
+    }
+    /* 매트릭스 버블 인터랙션 */
+    .matrix-node {
+      transition: opacity 0.18s ease;
+    }
+    .matrix-dimmed .matrix-node:not(.is-active) {
+      opacity: 0.18;
+    }
+    .matrix-node.is-active circle.main-bubble {
+      stroke-width: 3.5px;
+      filter: drop-shadow(0px 4px 6px rgba(17, 24, 39, 0.35));
+    }
+  </style>
+</head>
+<body class="p-4 md:p-8 min-h-screen">
+
+  <!-- 마우스 오버 플로팅 커스텀 툴팁 (매트릭스 전용) -->
+  <div id="matrix-tooltip" class="fixed z-50 pointer-events-none hidden w-72 bg-white border-2 border-gray-900 shadow-[4px_4px_0px_#111827] text-xs tabular-nums"></div>
+
+  <div id="dashboard-root" class="max-w-[1440px] mx-auto space-y-5">
+
+    <!-- 1. 상단 칼각 타이틀 & 관리자 컨트롤 바 -->
+    <header class="swiss-box">
+      <div class="swiss-header px-6 py-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div class="flex flex-wrap items-center gap-3">
+          <span class="px-2.5 py-1 text-xs font-black bg-lime-brand text-gray-900 tracking-wider uppercase">
+            RETAIL REPORT // GRID
+          </span>
+          <h1 class="text-xl md:text-2xl font-black tracking-tight text-white">
+            매출 대비 쿠폰 사용 비중 및 권유 고저도 점검 리포트
+          </h1>
+        </div>
+        <div class="flex items-center gap-3 text-xs font-bold text-gray-300 tabular-nums">
+          <span id="report-date-badge"></span>
+          <span id="mode-status-badge" class="px-2 py-0.5 border border-lime-400 text-lime-brand">ADMIN EDIT MODE</span>
+        </div>
+      </div>
+
+      <!-- 허들 기준 설정 & 파일 입출력 액션 바 (배포용 HTML에서는 숨김) -->
+      <div class="px-6 py-3.5 bg-white border-t-2 border-gray-900 flex flex-wrap items-center justify-between gap-3 admin-only no-export">
+        <div class="flex flex-wrap items-center gap-4">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-extrabold text-gray-900 uppercase">쿠폰 허들 금액:</span>
+            <input id="hurdle-amount-input" type="number" value="40000" step="5000" oninput="updateHurdleConfig()"
+              class="admin-input w-24 text-right text-sm tabular-nums" />
+            <span class="text-xs font-bold text-gray-700">원 이상</span>
+          </div>
+          <div class="h-4 w-[2px] bg-gray-300"></div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-extrabold text-gray-900 uppercase">근사치 폭(-):</span>
+            <input id="near-gap-input" type="number" value="10000" step="5000" oninput="updateHurdleConfig()"
+              class="admin-input w-20 text-right text-sm tabular-nums" />
+            <span class="text-xs font-bold text-gray-700">원 구간</span>
+            <span id="dynamic-range-preview" class="px-2 py-0.5 text-xs font-extrabold bg-coral-brand text-gray-900 tabular-nums">
+              3만~4만원 미만
+            </span>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <button onclick="togglePasteModal()" class="px-3.5 py-2 bg-gray-900 hover:bg-gray-800 text-white text-xs font-extrabold border-2 border-gray-900 transition">
+            📋 엑셀 복붙 / 양식
+          </button>
+          <button onclick="addEmptyStore()" class="px-3.5 py-2 bg-lime-brand hover:brightness-95 text-gray-900 text-xs font-black border-2 border-gray-900 transition">
+            + 매장 추가
+          </button>
+          <button onclick="resetToSample()" class="px-3 py-2 bg-white hover:bg-gray-100 text-gray-800 text-xs font-extrabold border-2 border-gray-900 transition">
+            15개 샘플 로드
+          </button>
+          <div class="h-5 w-[2px] bg-gray-300 mx-1"></div>
+          <button onclick="exportAsImage()" class="px-3.5 py-2 bg-white hover:bg-gray-100 text-gray-900 text-xs font-black border-2 border-gray-900 transition">
+            📸 이미지(PNG) 저장
+          </button>
+          <button onclick="exportReadOnlyHTML()" class="px-4 py-2 bg-coral-brand hover:brightness-95 text-gray-900 text-xs font-black border-2 border-gray-900 transition">
+            📄 매장 배포용 HTML 다운 (수정잠금)
+          </button>
+        </div>
+      </div>
+
+      <!-- 매장 조회 필터 바 (배포용 HTML에서도 그대로 유지) -->
+      <div class="px-6 py-3 bg-gray-100 border-t-2 border-gray-900 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-xs font-black text-gray-900 uppercase mr-1">FILTER // 매장 선택:</span>
+          <select id="single-store-select" onchange="handleSingleStoreSelect(this.value)"
+            class="px-3 py-1.5 bg-white border-2 border-gray-900 text-xs font-extrabold text-gray-900 focus:outline-none">
+            <option value="ALL">전체 매장 보기</option>
+          </select>
+          <button onclick="selectAllStores()" class="px-2.5 py-1.5 bg-white hover:bg-gray-200 border-2 border-gray-900 text-xs font-extrabold text-gray-800 no-export">
+            전체 체크
+          </button>
+        </div>
+        <!-- 다중 매장 체크박스 태그 영역 -->
+        <div id="store-filter-chips" class="flex flex-wrap items-center gap-1.5"></div>
+      </div>
+    </header>
+
+    <!-- 2. 엑셀 데이터 스마트 복사·붙여넣기 패널 (관리자 전용) -->
+    <section id="paste-panel" class="swiss-box p-6 bg-white hidden admin-only no-export">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 pb-4 border-b-2 border-gray-900">
+        <div>
+          <h2 class="text-base font-black text-gray-900">
+            ⚡ 엑셀 데이터 일괄 붙여넣기 (매장 자동 추가 · 병합)
+          </h2>
+          <p class="text-xs font-semibold text-gray-600 mt-0.5">
+            엑셀에서 표 영역을 복사(Ctrl+C)하여 아래 창에 붙여넣기(Ctrl+V)하면 줄 수만큼 매장이 자동 생성됩니다.
+          </p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="downloadCSVTemplate()" class="px-3 py-1.5 bg-white hover:bg-gray-100 text-gray-900 border-2 border-gray-900 text-xs font-extrabold">
+            📥 엑셀(CSV) 양식 다운로드
+          </button>
+          <label class="px-3 py-1.5 bg-lime-brand text-gray-900 border-2 border-gray-900 text-xs font-black cursor-pointer">
+            📂 CSV 파일 업로드
+            <input type="file" accept=".csv,.txt" onchange="handleCSVUpload(event)" class="hidden" />
+          </label>
+          <button onclick="togglePasteModal()" class="px-2.5 py-1 bg-gray-900 text-white text-xs font-black">✕</button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
+        <div class="lg:col-span-2">
+          <textarea id="excel-paste-area" rows="5"
+            placeholder="매장명 | 총매출(원) | 총객수(명) | 회원비중(%) | 근사치미달객수(명) | 허들이상객수(명) | 쿠폰사용건수(건)"
+            class="w-full p-3 text-xs font-mono bg-gray-50 border-2 border-gray-900 focus:bg-white focus:outline-none tabular-nums"></textarea>
+        </div>
+        <div class="flex flex-col justify-between bg-gray-50 p-4 border-2 border-gray-900">
+          <div class="space-y-1.5 text-xs font-semibold text-gray-700">
+            <div class="font-black text-gray-900">📌 지원 컬럼 구조 (5~7개 컬럼 자동 호환)</div>
+            <div>• 7컬럼: 매장명 | 총매출 | 총객수 | 회원비중 | <span class="underline">근사치미달</span> | <span class="underline">허들이상</span> | 쿠폰건수</div>
+            <div>• 6컬럼: 매장명 | 총매출 | 총객수 | 회원비중 | <span class="underline">허들이상</span> | 쿠폰건수</div>
+            <div>• 5컬럼: 매장명 | 총매출 | 총객수 | 회원비중 | 쿠폰건수</div>
+          </div>
+          <div class="flex items-center gap-2 pt-3 mt-3 border-t-2 border-gray-900">
+            <button onclick="applyExcelPaste('replace')" class="flex-1 py-2 bg-gray-900 hover:bg-gray-800 text-white text-xs font-black">
+              전체 덮어쓰기
+            </button>
+            <button onclick="applyExcelPaste('merge')" class="flex-1 py-2 bg-lime-brand hover:brightness-95 text-gray-900 border-2 border-gray-900 text-xs font-black">
+              기존 목록에 추가/병합
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. 상단 4대 핵심 KPI 칼각 그리드 -->
+    <section class="swiss-box grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y-2 sm:divide-y-0 sm:divide-x-2 divide-gray-900">
+      <!-- KPI 01: 평균 빌단가 & 총매출 -->
+      <div class="p-5 flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-black text-gray-500 uppercase">01 // 평균 빌단가 &amp; 매출</span>
+          <span class="px-2 py-0.5 text-[11px] font-black bg-gray-900 text-white">SCALE</span>
+        </div>
+        <div class="my-3">
+          <div id="kpi-avg-bill" class="text-3xl font-black text-gray-900 tabular-nums">0원</div>
+          <div class="text-xs font-bold text-gray-600 mt-1 tabular-nums">
+            합산 매출: <strong id="kpi-total-sales" class="text-gray-900">0원</strong>
+          </div>
+        </div>
+        <div class="pt-2 border-t-2 border-gray-200 flex justify-between text-xs font-bold text-gray-600 tabular-nums">
+          <span>조회 매장 총 객수</span>
+          <strong id="kpi-total-customers" class="text-gray-900">0명</strong>
+        </div>
+      </div>
+
+      <!-- KPI 02: 단순 쿠폰 사용 비중 -->
+      <div class="p-5 flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-black text-gray-500 uppercase">02 // 전체 쿠폰 사용 비중</span>
+          <span class="px-2 py-0.5 text-[11px] font-black bg-gray-200 text-gray-900">USAGE</span>
+        </div>
+        <div class="my-3">
+          <div class="flex items-baseline gap-2">
+            <span id="kpi-overall-coupon-rate" class="text-3xl font-black text-gray-900 tabular-nums">0.0%</span>
+            <span id="kpi-total-coupons" class="text-xs font-extrabold text-gray-500 tabular-nums">(0건)</span>
+          </div>
+          <div class="w-full h-3 bg-gray-100 border border-gray-900 mt-2 overflow-hidden">
+            <div id="kpi-coupon-bar" class="h-full bg-gray-900" style="width: 0%"></div>
+          </div>
+        </div>
+        <div class="pt-2 border-t-2 border-gray-200 flex justify-between text-xs font-bold text-gray-600 tabular-nums">
+          <span>평균 회원 비중</span>
+          <strong id="kpi-avg-member-rate" class="text-gray-900">0.0%</strong>
+        </div>
+      </div>
+
+      <!-- KPI 03: 허들 달성 고객 전환율 (#82DC28 포인트) -->
+      <div class="p-5 flex flex-col justify-between bg-gray-900 text-white">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-black text-lime-brand uppercase">03 // 허들 달성 쿠폰 전환율</span>
+          <span id="kpi-hurdle-badge" class="px-2 py-0.5 text-[11px] font-black bg-lime-brand text-gray-900 tabular-nums">4만↑ 기준</span>
+        </div>
+        <div class="my-3">
+          <div class="flex items-baseline gap-2">
+            <span id="kpi-hurdle-conv-rate" class="text-4xl font-black text-lime-brand tabular-nums">0.0%</span>
+            <span class="text-xs font-bold text-gray-300">전환</span>
+          </div>
+          <div class="text-xs font-bold text-gray-300 mt-1 tabular-nums">
+            전체 회원 대비 권유지수: <strong id="kpi-member-conv-rate" class="text-white">0.0%</strong>
+          </div>
+        </div>
+        <div class="pt-2 border-t border-gray-700 flex justify-between text-xs font-bold text-gray-300 tabular-nums">
+          <span>허들 이상 미적용 건수</span>
+          <strong id="kpi-missed-hurdle" class="text-lime-brand">0건</strong>
+        </div>
+      </div>
+
+      <!-- KPI 04: 허들 직전 빌단가 상승 타겟 (#FF7878 포인트) -->
+      <div class="p-5 flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-black text-gray-900 uppercase">04 // 빌단가 상승 타겟 풀</span>
+          <span id="kpi-nearmiss-badge" class="px-2 py-0.5 text-[11px] font-black bg-coral-brand text-gray-900 tabular-nums">3만~4만 미만</span>
+        </div>
+        <div class="my-3">
+          <div class="flex items-baseline gap-2">
+            <span id="kpi-total-near-miss" class="text-3xl font-black text-gray-900 tabular-nums">0명</span>
+            <span class="px-1.5 py-0.5 text-[11px] font-black bg-coral-brand/25 text-gray-900">업셀링 타겟</span>
+          </div>
+          <div class="text-xs font-bold text-gray-600 mt-1 tabular-nums">
+            우수 권유 매장: <strong id="kpi-best-store" class="text-gray-900">-</strong>
+          </div>
+        </div>
+        <div class="pt-2 border-t-2 border-gray-200 flex justify-between text-xs font-bold text-gray-600 tabular-nums">
+          <span>조회 중인 매장 수</span>
+          <strong id="kpi-active-store-count" class="text-gray-900">0개 매장</strong>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4-A. 독립 행 1 (Full-Width): 매장별 허들 달성 전환율 및 권유 고저도 랭킹 바 -->
+    <section class="swiss-box">
+      <div class="px-6 py-3.5 border-b-2 border-gray-900 bg-gray-50 flex flex-wrap items-center justify-between gap-2">
+        <h2 class="text-sm font-black text-gray-900 uppercase tracking-tight">
+          RANKING // 매장별 허들 달성 전환율 및 권유 고저도 비교 (번호 = 매트릭스 원 번호와 연동)
+        </h2>
+        <div class="flex flex-wrap items-center gap-4 text-xs font-bold">
+          <span class="flex items-center gap-1.5">
+            <span class="w-3.5 h-3.5 bg-lime-brand border border-gray-900 inline-block"></span> 상위/우수 전환 (Lv.1)
+          </span>
+          <span class="flex items-center gap-1.5">
+            <span class="w-3.5 h-3.5 bg-gray-900 inline-block"></span> 중위 양호 (Lv.2)
+          </span>
+          <span class="flex items-center gap-1.5">
+            <span class="w-3.5 h-3.5 bg-gray-300 border border-gray-400 inline-block"></span> 기회 타겟 (무채색 비강조)
+          </span>
+        </div>
+      </div>
+
+      <div id="ranking-bars-container" class="p-6 grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-4"></div>
+    </section>
+
+    <!-- 4-B. 독립 행 2 (Full-Width, 고정 높이 + 라벨 충돌 방지 & 인터랙티브 툴팁): MATRIX -->
+    <section class="swiss-box">
+      <div class="px-6 py-3.5 border-b-2 border-gray-900 bg-gray-50 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 class="text-sm font-black text-gray-900 uppercase tracking-tight">
+            MATRIX // 회원 비중(X) vs 권유 지수(Y) 포지셔닝 맵
+          </h2>
+          <p class="text-[11px] font-bold text-gray-500 mt-0.5">
+            점(원) 또는 우측 매장 배지에 마우스를 올리면 상세 실적 툴팁과 위치가 하이라이트됩니다.
+          </p>
+        </div>
+
+        <!-- 라벨 겹침 방지 표시 모드 스위치 -->
+        <div class="flex items-center gap-1.5 no-export">
+          <span class="text-xs font-black text-gray-700 mr-1">라벨 표시:</span>
+          <button id="lbl-btn-all" onclick="setMatrixLabelMode('all')"
+            class="px-2.5 py-1 text-xs font-black border-2 border-gray-900 bg-gray-900 text-lime-brand transition">
+            자동 분산 (전체 매장명)
+          </button>
+          <button id="lbl-btn-smart" onclick="setMatrixLabelMode('smart')"
+            class="px-2.5 py-1 text-xs font-extrabold border-2 border-gray-900 bg-white text-gray-800 hover:bg-gray-100 transition">
+            핵심 매장만
+          </button>
+          <button id="lbl-btn-number" onclick="setMatrixLabelMode('number')"
+            class="px-2.5 py-1 text-xs font-extrabold border-2 border-gray-900 bg-white text-gray-800 hover:bg-gray-100 transition">
+            번호만 (밀집 시 추천)
+          </button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 divide-y-2 lg:divide-y-0 lg:divide-x-2 divide-gray-900">
+        <!-- 좌측 8컬럼: 고정 높이(420px) 와이드 SVG 매트릭스 -->
+        <div class="lg:col-span-8 p-5 bg-white flex items-center justify-center">
+          <div class="w-full h-[380px] md:h-[420px] border-2 border-gray-900 bg-white overflow-hidden relative">
+            <svg id="matrix-svg" viewBox="0 0 860 400" preserveAspectRatio="xMidYMid meet" class="w-full h-full"></svg>
+          </div>
+        </div>
+
+        <!-- 우측 4컬럼: 4분면 구역별 매장 자동 분류 요약 카드 (마우스 오버 시 매트릭스 연동) -->
+        <div class="lg:col-span-4 p-5 bg-gray-50 flex flex-col justify-between space-y-3">
+          <div class="p-3.5 border-2 border-gray-900 bg-lime-brand/20">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-black text-gray-900">■ HIGH-HIGH (우상단: 고회원·고권유)</span>
+              <span id="quad-count-hh" class="px-1.5 py-0.5 text-[11px] font-black bg-gray-900 text-lime-brand tabular-nums">0개</span>
+            </div>
+            <p class="text-[11px] font-semibold text-gray-700 mt-1">회원 기반과 크루 권유 전환율이 모두 우수한 벤치마킹 표준 그룹</p>
+            <div id="quad-list-hh" class="mt-2.5 flex flex-wrap gap-1.5"></div>
+          </div>
+
+          <div class="p-3.5 border-2 border-gray-900 bg-white">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-black text-gray-900">■ LOW-HIGH (좌상단: 저회원·고권유)</span>
+              <span id="quad-count-lh" class="px-1.5 py-0.5 text-[11px] font-black bg-gray-900 text-white tabular-nums">0개</span>
+            </div>
+            <p class="text-[11px] font-semibold text-gray-700 mt-1">비회원 유입 상권이나 방문 회원 대상 크루의 쿠폰 전환 역량이 뛰어난 그룹</p>
+            <div id="quad-list-lh" class="mt-2.5 flex flex-wrap gap-1.5"></div>
+          </div>
+
+          <div class="p-3.5 border-2 border-gray-900 bg-coral-brand/20">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-black text-gray-900">■ UPSELL &amp; CARE (하단: 빌단가·권유 기회)</span>
+              <span id="quad-count-low" class="px-1.5 py-0.5 text-[11px] font-black bg-gray-900 text-white tabular-nums">0개</span>
+            </div>
+            <p class="text-[11px] font-semibold text-gray-700 mt-1">허들 직전 고객 업셀링 및 계산대 쿠폰 사전 안내로 즉각적인 상승이 가능한 그룹</p>
+            <div id="quad-list-low" class="mt-2.5 flex flex-wrap gap-1.5"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. 하단 매장별 상세 데이터 테이블 -->
+    <section class="swiss-box overflow-hidden">
+      <div class="px-6 py-4 border-b-2 border-gray-900 bg-gray-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <span class="px-2 py-0.5 text-xs font-black bg-lime-brand text-gray-900">DATA TABLE</span>
+          <h2 class="text-base font-black tracking-tight">
+            매장별 빌단가 · 허들 구간 객수 · 쿠폰 권유 실적 상세표
+          </h2>
+        </div>
+        <div class="flex items-center gap-2 no-export">
+          <span class="text-xs font-bold text-gray-300">정렬:</span>
+          <select id="sort-select" onchange="renderAll()"
+            class="text-xs font-extrabold bg-white text-gray-900 border-2 border-white px-2.5 py-1 focus:outline-none">
+            <option value="persuasion_desc">권유지수 높은 순</option>
+            <option value="persuasion_asc">권유지수 낮은 순</option>
+            <option value="bill_desc">빌단가 높은 순</option>
+            <option value="nearmiss_desc">근사치 미달(업셀타겟) 많은 순</option>
+            <option value="sales_desc">매출 높은 순</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="bg-gray-100 border-b-2 border-gray-900 text-xs font-black text-gray-900 uppercase">
+              <th class="py-3.5 px-4 border-r border-gray-300">매장명</th>
+              <th class="py-3.5 px-3 text-right border-r border-gray-300">실제 매장 매출(원)</th>
+              <th class="py-3.5 px-3 text-right border-r border-gray-300">총 객수(명)</th>
+              <th class="py-3.5 px-3 text-right border-r border-gray-300 bg-gray-200/70">빌단가(원)</th>
+              <th class="py-3.5 px-3 text-right border-r border-gray-300">회원 비중(%)</th>
+              <th id="th-nearmiss-label" class="py-3.5 px-3 text-right border-r border-gray-300 bg-coral-brand/25">
+                3만~4만원 미만(명)
+              </th>
+              <th id="th-hurdle-label" class="py-3.5 px-3 text-right border-r border-gray-300">
+                4만원 이상 객수(명)
+              </th>
+              <th class="py-3.5 px-3 text-right border-r border-gray-300 bg-lime-brand/25">쿠폰 사용(건)</th>
+              <th class="py-3.5 px-3 text-right border-r border-gray-300">단순 쿠폰비중</th>
+              <th class="py-3.5 px-3 text-right border-r border-gray-300">권유지수 (허들전환)</th>
+              <th class="py-3.5 px-3 text-center border-r border-gray-300">수준</th>
+              <th class="py-3.5 px-4">중점 타겟 키워드</th>
+              <th class="py-3.5 px-3 text-center admin-only no-export border-l border-gray-300">삭제</th>
+            </tr>
+          </thead>
+          <tbody id="store-table-body" class="divide-y divide-gray-300 text-sm tabular-nums"></tbody>
+        </table>
+      </div>
+    </section>
+
+  </div>
+
+  <script>
+    // =========================================================================
+    // 1. 초기 샘플 데이터 (15개 매장 기본 탑재로 밀집/분산 즉시 확인 가능)
+    // =========================================================================
+    const INITIAL_SAMPLE_DATA = [
+      { id: 'st-1', name: '강남타운점', sales: 68500000, customers: 2450, memberRate: 82.0, nearMissCount: 380, hurdleCount: 1050, couponCount: 890 },
+      { id: 'st-2', name: '명동글로벌점', sales: 84000000, customers: 3100, memberRate: 28.0, nearMissCount: 420, hurdleCount: 520, couponCount: 340 },
+      { id: 'st-3', name: '홍대중앙점', sales: 51200000, customers: 2150, memberRate: 54.0, nearMissCount: 310, hurdleCount: 640, couponCount: 530 },
+      { id: 'st-4', name: '잠실롯데점', sales: 62000000, customers: 2200, memberRate: 86.0, nearMissCount: 350, hurdleCount: 980, couponCount: 810 },
+      { id: 'st-5', name: '성수연무장점', sales: 47800000, customers: 1850, memberRate: 62.0, nearMissCount: 290, hurdleCount: 610, couponCount: 495 },
+      { id: 'st-6', name: '여의도IFC점', sales: 43500000, customers: 1600, memberRate: 88.0, nearMissCount: 270, hurdleCount: 740, couponCount: 520 },
+      { id: 'st-7', name: '분당서현점', sales: 36400000, customers: 1500, memberRate: 85.0, nearMissCount: 390, hurdleCount: 710, couponCount: 245 },
+      { id: 'st-8', name: '수지롯데점', sales: 31500000, customers: 1320, memberRate: 79.0, nearMissCount: 260, hurdleCount: 510, couponCount: 335 },
+      { id: 'st-9', name: '판교테크노점', sales: 39800000, customers: 1480, memberRate: 91.0, nearMissCount: 330, hurdleCount: 720, couponCount: 310 },
+      { id: 'st-10', name: '신촌연세점', sales: 23800000, customers: 1380, memberRate: 70.0, nearMissCount: 410, hurdleCount: 310, couponCount: 145 },
+      { id: 'st-11', name: '건대스타점', sales: 29400000, customers: 1520, memberRate: 65.0, nearMissCount: 360, hurdleCount: 420, couponCount: 260 },
+      { id: 'st-12', name: '종로관철점', sales: 33200000, customers: 1680, memberRate: 48.0, nearMissCount: 290, hurdleCount: 430, couponCount: 315 },
+      { id: 'st-13', name: '마포공덕점', sales: 27600000, customers: 1180, memberRate: 83.0, nearMissCount: 240, hurdleCount: 490, couponCount: 370 },
+      { id: 'st-14', name: '노원역점', sales: 25100000, customers: 1290, memberRate: 77.0, nearMissCount: 340, hurdleCount: 410, couponCount: 175 },
+      { id: 'st-15', name: '타임스퀘어점', sales: 58900000, customers: 2180, memberRate: 74.0, nearMissCount: 370, hurdleCount: 860, couponCount: 670 }
+    ];
+
+    window.__DASHBOARD_STATE__ = window.__DASHBOARD_STATE__ || {
+      readOnly: false,
+      hurdleAmount: 40000,
+      nearGap: 10000,
+      matrixLabelMode: 'all', // 'all' | 'smart' | 'number'
+      selectedStoreIds: INITIAL_SAMPLE_DATA.map(s => s.id),
+      stores: JSON.parse(JSON.stringify(INITIAL_SAMPLE_DATA))
+    };
+
+    // 호버 툴팁용 매장 캐시
+    let __ACTIVE_STORE_MAP__ = {};
+
+    function formatManWon(amount) {
+      const man = amount / 10000;
+      return Number.isInteger(man) ? `${man}만` : `${man.toFixed(1)}만`;
+    }
+
+    // =========================================================================
+    // 2. 빌단가 및 쿠폰 권유 지표 계산 엔진
+    // =========================================================================
+    function computeStoreMetrics(store, hurdleAmount) {
+      const sales = Math.max(0, Number(store.sales) || 0);
+      const customers = Math.max(1, Number(store.customers) || 1);
+      const memberRate = Math.min(100, Math.max(0, Number(store.memberRate) || 0));
+      const couponCount = Math.max(0, Number(store.couponCount) || 0);
+
+      const billPrice = Math.round(sales / customers);
+      const memberCount = Math.round(customers * (memberRate / 100));
+
+      let rawHurdleCount = Number(store.hurdleCount) || 0;
+      let nearMissCount = Number(store.nearMissCount) || 0;
+
+      if (rawHurdleCount <= 0) {
+        const ratio = Math.min(1.4, Math.max(0.25, billPrice / (hurdleAmount || 40000)));
+        rawHurdleCount = Math.round(memberCount * Math.min(0.85, ratio * 0.55));
+      }
+      if (nearMissCount <= 0) {
+        nearMissCount = Math.round(customers * 0.18);
+      }
+
+      const effectiveHurdleCount = Math.max(rawHurdleCount, couponCount);
+      const simpleCouponRate = (couponCount / customers) * 100;
+      const memberPersuasionRate = memberCount > 0 ? Math.min(100, (couponCount / memberCount) * 100) : 0;
+      const hurdleConversionRate = effectiveHurdleCount > 0 ? Math.min(100, (couponCount / effectiveHurdleCount) * 100) : 0;
+      const missedHurdleCount = Math.max(0, effectiveHurdleCount - couponCount);
+
+      return {
+        ...store,
+        sales,
+        customers,
+        memberRate,
+        couponCount,
+        billPrice,
+        memberCount,
+        nearMissCount,
+        hurdleCount: rawHurdleCount,
+        effectiveHurdleCount,
+        simpleCouponRate,
+        memberPersuasionRate,
+        hurdleConversionRate,
+        missedHurdleCount
+      };
+    }
+
+    function classifyStore(m, avgPersuasion, avgHurdleConv) {
+      const score = m.memberPersuasionRate * 0.6 + m.hurdleConversionRate * 0.4;
+      const avgScore = avgPersuasion * 0.6 + avgHurdleConv * 0.4;
+
+      let levelBadge = '';
+      let badgeStyle = '';
+      let barColor = '';
+      let rowTone = '';
+      let actionTag = '';
+
+      if (score >= avgScore * 1.12) {
+        levelBadge = 'Lv.1 우수';
+        badgeStyle = 'bg-lime-brand text-gray-900 border-2 border-gray-900 font-black';
+        barColor = '#82DC28';
+        rowTone = 'text-gray-900 font-bold';
+        actionTag = `<span class="px-2 py-0.5 text-xs font-black bg-lime-brand/30 text-gray-900 border border-gray-900">우수 표준 · 전환 ${m.hurdleConversionRate.toFixed(0)}%</span>`;
+      } else if (score >= avgScore * 0.9) {
+        levelBadge = 'Lv.2 양호';
+        badgeStyle = 'bg-gray-900 text-white border-2 border-gray-900 font-extrabold';
+        barColor = '#111827';
+        rowTone = 'text-gray-900 font-semibold';
+        actionTag = `<span class="px-2 py-0.5 text-xs font-bold bg-gray-100 text-gray-800 border border-gray-400">안정 운영 · 미달 ${m.nearMissCount.toLocaleString()}명</span>`;
+      } else {
+        levelBadge = 'Lv.3 기회';
+        badgeStyle = 'bg-gray-100 text-gray-500 border border-gray-300 font-bold';
+        barColor = '#CBD5E1';
+        rowTone = 'text-gray-500 font-medium';
+        if (m.nearMissCount >= m.missedHurdleCount) {
+          actionTag = `<span class="px-2 py-0.5 text-xs font-bold bg-coral-brand/25 text-gray-800 border border-gray-400">빌단가 상승 타겟 ${m.nearMissCount.toLocaleString()}명</span>`;
+        } else {
+          actionTag = `<span class="px-2 py-0.5 text-xs font-bold bg-gray-100 text-gray-600 border border-gray-300">허들 달성 미적용 ${m.missedHurdleCount.toLocaleString()}건</span>`;
+        }
+      }
+
+      return { levelBadge, badgeStyle, barColor, rowTone, actionTag, score };
+    }
+
+    // =========================================================================
+    // 3. 매장 필터 UI 렌더링
+    // =========================================================================
+    function renderFilterBar() {
+      const state = window.__DASHBOARD_STATE__;
+      const selectEl = document.getElementById('single-store-select');
+      const chipsEl = document.getElementById('store-filter-chips');
+
+      const validIds = state.stores.map(s => s.id);
+      state.selectedStoreIds = (state.selectedStoreIds || []).filter(id => validIds.includes(id));
+      if (state.selectedStoreIds.length === 0) {
+        state.selectedStoreIds = [...validIds];
+      }
+
+      const singleSelectedId = state.selectedStoreIds.length === 1 ? state.selectedStoreIds[0] : 'ALL';
+
+      selectEl.innerHTML = `<option value="ALL">전체 매장 보기 (${state.stores.length}개)</option>` +
+        state.stores.map(s => `<option value="${s.id}" ${singleSelectedId === s.id ? 'selected' : ''}>${s.name} 단독 조회</option>`).join('');
+
+      chipsEl.innerHTML = state.stores.map(s => {
+        const checked = state.selectedStoreIds.includes(s.id);
+        return `
+          <button onclick="toggleStoreChip('${s.id}')"
+            class="px-2.5 py-1 text-xs font-extrabold border-2 transition ${
+              checked
+                ? 'bg-gray-900 text-lime-brand border-gray-900'
+                : 'bg-white text-gray-400 border-gray-300 hover:border-gray-600'
+            }">
+            ${checked ? '✓ ' : ''}${s.name}
+          </button>
+        `;
+      }).join('');
+    }
+
+    function handleSingleStoreSelect(val) {
+      const state = window.__DASHBOARD_STATE__;
+      if (val === 'ALL') {
+        state.selectedStoreIds = state.stores.map(s => s.id);
+      } else {
+        state.selectedStoreIds = [val];
+      }
+      renderAll();
+    }
+
+    function toggleStoreChip(id) {
+      const state = window.__DASHBOARD_STATE__;
+      const idx = state.selectedStoreIds.indexOf(id);
+      if (idx > -1) {
+        if (state.selectedStoreIds.length > 1) {
+          state.selectedStoreIds.splice(idx, 1);
+        }
+      } else {
+        state.selectedStoreIds.push(id);
+      }
+      renderAll();
+    }
+
+    function selectAllStores() {
+      window.__DASHBOARD_STATE__.selectedStoreIds = window.__DASHBOARD_STATE__.stores.map(s => s.id);
+      renderAll();
+    }
+
+    function setMatrixLabelMode(mode) {
+      window.__DASHBOARD_STATE__.matrixLabelMode = mode;
+      ['all', 'smart', 'number'].forEach(m => {
+        const btn = document.getElementById(`lbl-btn-${m}`);
+        if (!btn) return;
+        if (m === mode) {
+          btn.className = 'px-2.5 py-1 text-xs font-black border-2 border-gray-900 bg-gray-900 text-lime-brand transition';
+        } else {
+          btn.className = 'px-2.5 py-1 text-xs font-extrabold border-2 border-gray-900 bg-white text-gray-800 hover:bg-gray-100 transition';
+        }
+      });
+      renderAll();
+    }
+
+    // =========================================================================
+    // 4. 전체 대시보드 렌더링
+    // =========================================================================
+    function renderAll() {
+      const state = window.__DASHBOARD_STATE__;
+      const hurdleAmount = Number(state.hurdleAmount) || 40000;
+      const nearGap = Number(state.nearGap) || 10000;
+      const lowerBound = Math.max(0, hurdleAmount - nearGap);
+
+      if (state.readOnly) {
+        document.body.classList.add('readonly-mode');
+        document.getElementById('mode-status-badge').textContent = 'REPORT VIEW ONLY';
+      } else {
+        document.body.classList.remove('readonly-mode');
+        document.getElementById('mode-status-badge').textContent = 'ADMIN EDIT MODE';
+      }
+
+      const rangeText = `${formatManWon(lowerBound)}~${formatManWon(hurdleAmount)}원 미만`;
+      const hurdleText = `${formatManWon(hurdleAmount)}원 이상`;
+
+      const previewEl = document.getElementById('dynamic-range-preview');
+      if (previewEl) previewEl.textContent = rangeText;
+      document.getElementById('kpi-hurdle-badge').textContent = `${formatManWon(hurdleAmount)}↑ 기준`;
+      document.getElementById('kpi-nearmiss-badge').textContent = rangeText;
+      document.getElementById('th-nearmiss-label').textContent = `${rangeText} 객수(명)`;
+      document.getElementById('th-hurdle-label').textContent = `${hurdleText} 객수(명)`;
+
+      renderFilterBar();
+
+      const allComputed = state.stores.map(s => computeStoreMetrics(s, hurdleAmount));
+      const allMembers = allComputed.reduce((a, b) => a + b.memberCount, 0);
+      const allCoupons = allComputed.reduce((a, b) => a + b.couponCount, 0);
+      const allHurdles = allComputed.reduce((a, b) => a + b.effectiveHurdleCount, 0);
+      const globalAvgPersuasion = allMembers > 0 ? (allCoupons / allMembers) * 100 : 0;
+      const globalAvgHurdleConv = allHurdles > 0 ? (allCoupons / allHurdles) * 100 : 0;
+      const globalAvgMemberRate = allComputed.reduce((a, b) => a + b.customers, 0) > 0
+        ? (allMembers / allComputed.reduce((a, b) => a + b.customers, 0)) * 100
+        : 0;
+
+      const activeStores = allComputed
+        .filter(s => state.selectedStoreIds.includes(s.id))
+        .map(m => ({ ...m, ...classifyStore(m, globalAvgPersuasion, globalAvgHurdleConv) }));
+
+      if (activeStores.length === 0) return;
+
+      const totalSales = activeStores.reduce((a, s) => a + s.sales, 0);
+      const totalCustomers = activeStores.reduce((a, s) => a + s.customers, 0);
+      const totalCoupons = activeStores.reduce((a, s) => a + s.couponCount, 0);
+      const totalMembers = activeStores.reduce((a, s) => a + s.memberCount, 0);
+      const totalEffectiveHurdle = activeStores.reduce((a, s) => a + s.effectiveHurdleCount, 0);
+      const totalMissedHurdle = activeStores.reduce((a, s) => a + s.missedHurdleCount, 0);
+      const totalNearMiss = activeStores.reduce((a, s) => a + s.nearMissCount, 0);
+
+      const avgBillPrice = totalCustomers > 0 ? Math.round(totalSales / totalCustomers) : 0;
+      const overallCouponRate = totalCustomers > 0 ? (totalCoupons / totalCustomers) * 100 : 0;
+      const avgMemberRate = totalCustomers > 0 ? (totalMembers / totalCustomers) * 100 : 0;
+      const avgPersuasionRate = totalMembers > 0 ? (totalCoupons / totalMembers) * 100 : 0;
+      const avgHurdleConvRate = totalEffectiveHurdle > 0 ? (totalCoupons / totalEffectiveHurdle) * 100 : 0;
+
+      const bestStore = [...activeStores].sort((a, b) => b.memberPersuasionRate - a.memberPersuasionRate)[0];
+
+      document.getElementById('kpi-avg-bill').textContent = `${avgBillPrice.toLocaleString()}원`;
+      document.getElementById('kpi-total-sales').textContent = `${(totalSales / 10000).toLocaleString()}만 원`;
+      document.getElementById('kpi-total-customers').textContent = `${totalCustomers.toLocaleString()}명`;
+
+      document.getElementById('kpi-overall-coupon-rate').textContent = `${overallCouponRate.toFixed(1)}%`;
+      document.getElementById('kpi-total-coupons').textContent = `(${totalCoupons.toLocaleString()}건)`;
+      document.getElementById('kpi-coupon-bar').style.width = `${Math.min(100, overallCouponRate)}%`;
+      document.getElementById('kpi-avg-member-rate').textContent = `${avgMemberRate.toFixed(1)}%`;
+
+      document.getElementById('kpi-hurdle-conv-rate').textContent = `${avgHurdleConvRate.toFixed(1)}%`;
+      document.getElementById('kpi-member-conv-rate').textContent = `${avgPersuasionRate.toFixed(1)}%`;
+      document.getElementById('kpi-missed-hurdle').textContent = `${totalMissedHurdle.toLocaleString()}건`;
+
+      document.getElementById('kpi-total-near-miss').textContent = `${totalNearMiss.toLocaleString()}명`;
+      document.getElementById('kpi-best-store').textContent = bestStore ? `${bestStore.name} (${bestStore.memberPersuasionRate.toFixed(1)}%)` : '-';
+      document.getElementById('kpi-active-store-count').textContent = `${activeStores.length}개 매장`;
+
+      const sortMode = document.getElementById('sort-select')?.value || 'persuasion_desc';
+      const sortedList = [...activeStores].sort((a, b) => {
+        if (sortMode === 'persuasion_desc') return b.memberPersuasionRate - a.memberPersuasionRate;
+        if (sortMode === 'persuasion_asc') return a.memberPersuasionRate - b.memberPersuasionRate;
+        if (sortMode === 'bill_desc') return b.billPrice - a.billPrice;
+        if (sortMode === 'nearmiss_desc') return b.nearMissCount - a.nearMissCount;
+        if (sortMode === 'sales_desc') return b.sales - a.sales;
+        return 0;
+      });
+
+      // 각 매장에 정렬 순서 번호(rankNo) 부여하여 매트릭스 원 내부 번호와 1:1 매칭
+      sortedList.forEach((st, idx) => {
+        st.rankNo = idx + 1;
+        st.rangeLabel = rangeText;
+        __ACTIVE_STORE_MAP__[st.id] = st;
+      });
+
+      renderRankingBars(sortedList, rangeText);
+      renderMatrixSVG(sortedList, globalAvgMemberRate, globalAvgPersuasion);
+      renderStoreTable(sortedList);
+    }
+
+    function renderRankingBars(list, rangeText) {
+      const container = document.getElementById('ranking-bars-container');
+      container.innerHTML = '';
+
+      list.forEach(item => {
+        const convPct = Math.min(100, item.hurdleConversionRate);
+        const row = document.createElement('div');
+        row.className = 'p-3.5 border-2 border-gray-900 bg-white space-y-2 hover:bg-gray-50 transition cursor-pointer';
+        row.onmouseenter = (e) => highlightMatrixNode(item.id, e, false);
+        row.onmouseleave = () => clearMatrixHighlight();
+
+        row.innerHTML = `
+          <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div class="flex items-center gap-2">
+              <span class="w-6 h-6 flex items-center justify-center bg-gray-900 text-lime-brand font-black text-[11px] tabular-nums">
+                ${String(item.rankNo).padStart(2, '0')}
+              </span>
+              <span class="text-sm ${item.rowTone}">${item.name}</span>
+              <span class="px-2 py-0.5 text-[11px] ${item.badgeStyle}">${item.levelBadge}</span>
+            </div>
+            <div class="flex items-center gap-3 text-xs tabular-nums">
+              <span class="text-gray-600 font-bold">빌단가: <strong class="text-gray-900">${item.billPrice.toLocaleString()}원</strong></span>
+              <span class="px-2 py-0.5 bg-coral-brand/20 text-gray-900 font-extrabold border border-gray-300">
+                ${rangeText}: ${item.nearMissCount.toLocaleString()}명
+              </span>
+              <span class="font-black text-gray-900 text-sm">
+                권유지수 ${item.memberPersuasionRate.toFixed(1)}%
+              </span>
+            </div>
+          </div>
+          <!-- 단일 목표 달성 게이지 바 -->
+          <div class="w-full h-6 bg-gray-100 border-2 border-gray-900 flex items-center relative overflow-hidden">
+            <div style="width: ${convPct}%; background-color: ${item.barColor};" class="h-full transition-all"></div>
+            <div class="absolute inset-0 px-3 flex items-center justify-between text-xs font-black tabular-nums">
+              <span class="text-gray-900">
+                허들 전환율 ${item.hurdleConversionRate.toFixed(1)}% (사용 ${item.couponCount.toLocaleString()}건 / 모수 ${item.effectiveHurdleCount.toLocaleString()}명)
+              </span>
+              <span class="text-gray-700">미적용 ${item.missedHurdleCount.toLocaleString()}건</span>
+            </div>
+          </div>
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    // =========================================================================
+    // 5. 매트릭스 라벨 자동 충돌 회피 엔진 + 플로팅 툴팁 + 양방향 하이라이트
+    // =========================================================================
+    function renderMatrixSVG(list, avgMember, avgPersuasion) {
+      const svg = document.getElementById('matrix-svg');
+      const labelMode = window.__DASHBOARD_STATE__.matrixLabelMode || 'all';
+      const W = 860, H = 400;
+      const padL = 66, padR = 40, padT = 36, padB = 48;
+      const plotW = W - padL - padR;
+      const plotH = H - padT - padB;
+
+      const maxSales = Math.max(...list.map(d => d.sales), 10000000);
+      const maxY = Math.max(65, Math.ceil(Math.max(...list.map(d => d.memberPersuasionRate), avgPersuasion) / 10) * 10 + 10);
+
+      const xToPx = x => padL + (Math.min(100, Math.max(0, x)) / 100) * plotW;
+      const yToPx = y => padT + plotH - (Math.min(maxY, Math.max(0, y)) / maxY) * plotH;
+
+      const midX = xToPx(avgMember);
+      const midY = yToPx(avgPersuasion);
+
+      // 눈금선
+      let gridLines = '';
+      [20, 40, 60, 80].forEach(xVal => {
+        const gx = xToPx(xVal);
+        gridLines += `<line x1="${gx}" y1="${padT}" x2="${gx}" y2="${padT + plotH}" stroke="#E5E7EB" stroke-width="1" />`;
+        gridLines += `<text x="${gx}" y="${padT + plotH + 18}" text-anchor="middle" font-size="11" font-weight="700" fill="#6B7280">${xVal}%</text>`;
+      });
+
+      const ySteps = 4;
+      for (let i = 1; i <= ySteps; i++) {
+        const yVal = Math.round((maxY / ySteps) * i);
+        const gy = yToPx(yVal);
+        gridLines += `<line x1="${padL}" y1="${gy}" x2="${padL + plotW}" y2="${gy}" stroke="#E5E7EB" stroke-width="1" />`;
+        gridLines += `<text x="${padL - 10}" y="${gy + 4}" text-anchor="end" font-size="11" font-weight="700" fill="#6B7280">${yVal}%</text>`;
+      }
+
+      let html = `
+        <!-- 우상단 우수 영역 (#82DC28 연한 배경) -->
+        <rect x="${midX}" y="${padT}" width="${padL + plotW - midX}" height="${midY - padT}" fill="#82DC28" fill-opacity="0.16" />
+        <!-- 하단 기회 영역 (#FF7878 연한 배경) -->
+        <rect x="${padL}" y="${midY}" width="${plotW}" height="${padT + plotH - midY}" fill="#FF7878" fill-opacity="0.10" />
+
+        ${gridLines}
+
+        <!-- 평균 기준선 -->
+        <line x1="${midX}" y1="${padT}" x2="${midX}" y2="${padT + plotH}" stroke="#111827" stroke-dasharray="5 4" stroke-width="1.8" />
+        <line x1="${padL}" y1="${midY}" x2="${padL + plotW}" y2="${midY}" stroke="#111827" stroke-dasharray="5 4" stroke-width="1.8" />
+
+        <!-- 분면 워터마크 -->
+        <text x="${padL + plotW - 12}" y="${padT + 20}" text-anchor="end" font-size="11" font-weight="900" fill="#111827">HIGH-HIGH // 고회원·고권유</text>
+        <text x="${padL + 12}" y="${padT + 20}" text-anchor="start" font-size="11" font-weight="900" fill="#374151">LOW-HIGH // 크루 권유 역량 우수</text>
+        <text x="${padL + plotW - 12}" y="${padT + plotH - 10}" text-anchor="end" font-size="11" font-weight="900" fill="#4B5563">UPSELL &amp; CARE // 빌단가·권유 기회</text>
+
+        <!-- 외곽 프레임 -->
+        <rect x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="none" stroke="#111827" stroke-width="2" />
+
+        <!-- 축 타이틀 -->
+        <text x="${padL + plotW / 2}" y="${H - 10}" text-anchor="middle" font-size="12" fill="#111827" font-weight="900">
+          회원 비중 (%) — 전체 평균 ${avgMember.toFixed(1)}%
+        </text>
+        <text x="18" y="${padT + plotH / 2}" text-anchor="middle" font-size="12" fill="#111827" font-weight="900" transform="rotate(-90 18 ${padT + plotH / 2})">
+          권유 지수 (%) — 평균 ${avgPersuasion.toFixed(1)}%
+        </text>
+      `;
+
+      const hhStores = [];
+      const lhStores = [];
+      const lowStores = [];
+
+      // 노드 좌표 계산
+      const nodes = list.map((st, idx) => {
+        const cx = xToPx(st.memberRate);
+        const cy = yToPx(st.memberPersuasionRate);
+        const r = 10 + (st.sales / maxSales) * 11;
+
+        let fill = '#CBD5E1';
+        let textFill = '#111827';
+        if (st.memberPersuasionRate >= avgPersuasion) {
+          fill = '#82DC28';
+          if (st.memberRate >= avgMember) hhStores.push(st);
+          else lhStores.push(st);
+        } else {
+          lowStores.push(st);
+        }
+
+        // 'smart' 모드일 때는 상위 4개 + 하위 3개 + 매출 최대 매장만 라벨 노출
+        const showLabel =
+          labelMode === 'all' ||
+          (labelMode === 'smart' && (idx < 4 || idx >= list.length - 3 || st.sales === maxSales));
+
+        return {
+          st, cx, cy, r, fill, textFill, showLabel,
+          labelW: st.name.length * 11 + 14,
+          labelH: 20,
+          lx: cx,
+          ly: cy - r - 12
+        };
+      });
+
+      // [자동 충돌 회피 알고리즘] 이미 배치된 원(Bubble) 및 다른 라벨 박스와 겹치지 않는 최적 슬롯 탐색
+      const placedBoxes = nodes.map(n => ({
+        x1: n.cx - n.r - 2,
+        y1: n.cy - n.r - 2,
+        x2: n.cx + n.r + 2,
+        y2: n.cy + n.r + 2
+      }));
+
+      const candidateOffsets = [
+        { dx: 0, dy: -16 },
+        { dx: 0, dy: 20 },
+        { dx: 46, dy: -6 },
+        { dx: -46, dy: -6 },
+        { dx: 48, dy: 14 },
+        { dx: -48, dy: 14 },
+        { dx: 0, dy: -34 },
+        { dx: 0, dy: 36 },
+        { dx: 68, dy: -18 },
+        { dx: -68, dy: -18 },
+        { dx: 68, dy: 20 },
+        { dx: -68, dy: 20 }
+      ];
+
+      nodes.forEach(n => {
+        if (!n.showLabel) return;
+        let bestPos = { lx: n.cx, ly: n.cy - n.r - 12 };
+        let minPenalty = Infinity;
+
+        candidateOffsets.forEach(off => {
+          const candX = n.cx + off.dx;
+          const candY = n.cy + (off.dy < 0 ? off.dy - n.r : off.dy + n.r);
+          const box = {
+            x1: candX - n.labelW / 2,
+            y1: candY - n.labelH / 2,
+            x2: candX + n.labelW / 2,
+            y2: candY + n.labelH / 2
+          };
+
+          let penalty = 0;
+          // 플롯 경계 이탈 페널티
+          if (box.x1 < padL + 4 || box.x2 > padL + plotW - 4) penalty += 5000;
+          if (box.y1 < padT + 4 || box.y2 > padT + plotH - 4) penalty += 5000;
+
+          // 기존 박스(원 + 타 라벨)와 겹침 면적 페널티
+          placedBoxes.forEach(pb => {
+            const ox = Math.max(0, Math.min(box.x2, pb.x2) - Math.max(box.x1, pb.x1));
+            const oy = Math.max(0, Math.min(box.y2, pb.y2) - Math.max(box.y1, pb.y1));
+            if (ox > 0 && oy > 0) {
+              penalty += ox * oy * 10;
+            }
+          });
+
+          // 원 중심과의 거리 페널티(가까울수록 선호)
+          penalty += Math.hypot(candX - n.cx, candY - n.cy) * 0.4;
+
+          if (penalty < minPenalty) {
+            minPenalty = penalty;
+            bestPos = { lx: candX, ly: candY, box };
+          }
+        });
+
+        n.lx = bestPos.lx;
+        n.ly = bestPos.ly;
+        if (bestPos.box) placedBoxes.push(bestPos.box);
+      });
+
+      // 1) 지시선(Leader line) 먼저 렌더링
+      nodes.forEach(n => {
+        if (!n.showLabel) return;
+        const dist = Math.hypot(n.lx - n.cx, n.ly - n.cy);
+        if (dist > n.r + 16) {
+          html += `<line x1="${n.cx}" y1="${n.cy}" x2="${n.lx}" y2="${n.ly}" stroke="#111827" stroke-width="1.2" stroke-dasharray="2 2" />`;
+        }
+      });
+
+      // 2) 버블(원) + 원 내부 번호 + 외곽 라벨 박스 렌더링
+      nodes.forEach(n => {
+        const st = n.st;
+        html += `
+          <g id="matrix-node-${st.id}" class="matrix-node cursor-pointer"
+             onmouseenter="highlightMatrixNode('${st.id}', event, true)"
+             onmousemove="moveMatrixTooltip(event)"
+             onmouseleave="clearMatrixHighlight()">
+            <circle class="main-bubble" cx="${n.cx}" cy="${n.cy}" r="${n.r}" fill="${n.fill}" stroke="#111827" stroke-width="2"></circle>
+            <text x="${n.cx}" y="${n.cy + 3.5}" text-anchor="middle" font-size="10" font-weight="900" fill="${n.textFill}" pointer-events="none">
+              ${String(st.rankNo).padStart(2, '0')}
+            </text>
+            ${n.showLabel ? `
+              <g pointer-events="none">
+                <rect x="${n.lx - n.labelW / 2}" y="${n.ly - 10}" width="${n.labelW}" height="19" rx="2"
+                      fill="#FFFFFF" fill-opacity="0.94" stroke="#111827" stroke-width="1.3" />
+                <text x="${n.lx}" y="${n.ly + 3}" text-anchor="middle" font-size="11" font-weight="900" fill="#111827">
+                  ${st.name}
+                </text>
+              </g>
+            ` : ''}
+          </g>
+        `;
+      });
+
+      svg.innerHTML = html;
+
+      // 우측 4분면 요약 카드 배지 (마우스 오버 시 매트릭스 해당 매장 하이라이트 연동)
+      const makeBadge = (s, cls) => `
+        <span onmouseenter="highlightMatrixNode('${s.id}', event, true)"
+              onmousemove="moveMatrixTooltip(event)"
+              onmouseleave="clearMatrixHighlight()"
+              class="px-2 py-1 text-xs font-extrabold border-2 border-gray-900 cursor-pointer transition hover:scale-105 ${cls}">
+          #${String(s.rankNo).padStart(2, '0')} ${s.name} (${s.memberPersuasionRate.toFixed(0)}%)
+        </span>
+      `;
+
+      document.getElementById('quad-count-hh').textContent = `${hhStores.length}개`;
+      document.getElementById('quad-list-hh').innerHTML = hhStores.length
+        ? hhStores.map(s => makeBadge(s, 'bg-lime-brand text-gray-900')).join('')
+        : '<span class="text-xs text-gray-400 font-semibold">해당 매장 없음</span>';
+
+      document.getElementById('quad-count-lh').textContent = `${lhStores.length}개`;
+      document.getElementById('quad-list-lh').innerHTML = lhStores.length
+        ? lhStores.map(s => makeBadge(s, 'bg-gray-900 text-white')).join('')
+        : '<span class="text-xs text-gray-400 font-semibold">해당 매장 없음</span>';
+
+      document.getElementById('quad-count-low').textContent = `${lowStores.length}개`;
+      document.getElementById('quad-list-low').innerHTML = lowStores.length
+        ? lowStores.map(s => makeBadge(s, 'bg-white text-gray-700')).join('')
+        : '<span class="text-xs text-gray-400 font-semibold">해당 매장 없음</span>';
+    }
+
+    // 매트릭스 노드 하이라이트 & 커스텀 플로팅 툴팁 표시
+    function highlightMatrixNode(storeId, evt, showTooltipFlag) {
+      const svg = document.getElementById('matrix-svg');
+      const targetNode = document.getElementById(`matrix-node-${storeId}`);
+      if (svg && targetNode) {
+        svg.classList.add('matrix-dimmed');
+        document.querySelectorAll('.matrix-node').forEach(el => el.classList.remove('is-active'));
+        targetNode.classList.add('is-active');
+        // 활성 노드를 SVG 최상단 레이어로 올려 가려짐 방지
+        svg.appendChild(targetNode);
+      }
+
+      if (showTooltipFlag && evt) {
+        const st = __ACTIVE_STORE_MAP__[storeId];
+        if (!st) return;
+        const tooltip = document.getElementById('matrix-tooltip');
+        tooltip.innerHTML = `
+          <div class="bg-gray-900 text-white px-3 py-2 flex items-center justify-between border-b-2 border-gray-900">
+            <span class="font-black text-sm text-lime-brand">#${String(st.rankNo).padStart(2, '0')} ${st.name}</span>
+            <span class="px-1.5 py-0.5 text-[10px] font-black bg-white text-gray-900">${st.levelBadge}</span>
+          </div>
+          <div class="p-3 space-y-1.5 bg-white text-gray-900">
+            <div class="flex justify-between">
+              <span class="font-bold text-gray-500">실제 매출 / 빌단가</span>
+              <span class="font-black">${(st.sales / 10000).toLocaleString()}만원 / ${st.billPrice.toLocaleString()}원</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="font-bold text-gray-500">총 객수 / 회원 비중</span>
+              <span class="font-extrabold">${st.customers.toLocaleString()}명 (${st.memberRate.toFixed(1)}%)</span>
+            </div>
+            <div class="border-t border-gray-200 my-1 pt-1 flex justify-between">
+              <span class="font-extrabold text-gray-900">크루 권유 지수 (회원전환)</span>
+              <span class="font-black text-sm px-1.5 bg-lime-brand text-gray-900">${st.memberPersuasionRate.toFixed(1)}%</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="font-bold text-gray-600">허들 달성 쿠폰 전환율</span>
+              <span class="font-black text-gray-900">${st.hurdleConversionRate.toFixed(1)}% (${st.couponCount.toLocaleString()}건)</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="font-bold text-gray-600">${st.rangeLabel} (업셀타겟)</span>
+              <span class="font-black px-1.5 bg-coral-brand/30 text-gray-900">${st.nearMissCount.toLocaleString()}명</span>
+            </div>
+          </div>
+        `;
+        tooltip.classList.remove('hidden');
+        moveMatrixTooltip(evt);
+      }
+    }
+
+    function moveMatrixTooltip(evt) {
+      const tooltip = document.getElementById('matrix-tooltip');
+      if (!tooltip || tooltip.classList.contains('hidden')) return;
+      const offset = 16;
+      let left = evt.clientX + offset;
+      let top = evt.clientY + offset;
+
+      if (left + 290 > window.innerWidth) left = evt.clientX - 295;
+      if (top + 210 > window.innerHeight) top = evt.clientY - 210;
+
+      tooltip.style.left = `${left}px`;
+      tooltip.style.top = `${top}px`;
+    }
+
+    function clearMatrixHighlight() {
+      const svg = document.getElementById('matrix-svg');
+      if (svg) svg.classList.remove('matrix-dimmed');
+      document.querySelectorAll('.matrix-node').forEach(el => el.classList.remove('is-active'));
+      const tooltip = document.getElementById('matrix-tooltip');
+      if (tooltip) tooltip.classList.add('hidden');
+    }
+
+    // =========================================================================
+    // 6. 상세 테이블 렌더링
+    // =========================================================================
+    function renderStoreTable(list) {
+      const state = window.__DASHBOARD_STATE__;
+      const tbody = document.getElementById('store-table-body');
+      tbody.innerHTML = '';
+
+      list.forEach(st => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-gray-50 transition';
+
+        if (state.readOnly) {
+          tr.innerHTML = `
+            <td class="py-3.5 px-4 border-r border-gray-300 ${st.rowTone}">
+              <span class="inline-block w-5 text-xs font-black text-gray-400 mr-1">#${String(st.rankNo).padStart(2, '0')}</span>${st.name}
+            </td>
+            <td class="py-3.5 px-3 text-right border-r border-gray-300 ${st.rowTone}">${st.sales.toLocaleString()}</td>
+            <td class="py-3.5 px-3 text-right border-r border-gray-300 ${st.rowTone}">${st.customers.toLocaleString()}</td>
+            <td class="py-3.5 px-3 text-right border-r border-gray-300 bg-gray-100 font-black text-gray-900">${st.billPrice.toLocaleString()}원</td>
+            <td class="py-3.5 px-3 text-right border-r border-gray-300 ${st.rowTone}">${st.memberRate.toFixed(1)}% <span class="text-xs text-gray-400">(${st.memberCount.toLocaleString()}명)</span></td>
+            <td class="py-3.5 px-3 text-right border-r border-gray-300 bg-coral-brand/10 font-extrabold text-gray-900">${st.nearMissCount.toLocaleString()}</td>
+            <td class="py-3.5 px-3 text-right border-r border-gray-300 font-bold text-gray-800">${st.hurdleCount.toLocaleString()}</td>
+            <td class="py-3.5 px-3 text-right border-r border-gray-300 bg-lime-brand/15 font-black text-gray-900">${st.couponCount.toLocaleString()}</td>
+            <td class="py-3.5 px-3 text-right border-r border-gray-300 font-bold text-gray-700">${st.simpleCouponRate.toFixed(1)}%</td>
+            <td class="py-3.5 px-3 text-right border-r border-gray-300">
+              <span class="text-base font-black text-gray-900">${st.memberPersuasionRate.toFixed(1)}%</span>
+              <span class="block text-[11px] font-bold text-gray-500">허들전환 ${st.hurdleConversionRate.toFixed(1)}%</span>
+            </td>
+            <td class="py-3.5 px-3 text-center border-r border-gray-300">
+              <span class="px-2.5 py-1 text-xs whitespace-nowrap ${st.badgeStyle}">${st.levelBadge}</span>
+            </td>
+            <td class="py-3.5 px-4">${st.actionTag}</td>
+          `;
+        } else {
+          tr.innerHTML = `
+            <td class="py-2.5 px-3 border-r border-gray-300">
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs font-black text-gray-400 w-5">#${String(st.rankNo).padStart(2, '0')}</span>
+                <input type="text" value="${st.name}" onchange="handleCellEdit('${st.id}', 'name', this.value)"
+                  class="admin-input w-28 text-sm" />
+              </div>
+            </td>
+            <td class="py-2.5 px-3 text-right border-r border-gray-300">
+              <input type="number" value="${st.sales}" step="100000" onchange="handleCellEdit('${st.id}', 'sales', this.value)"
+                class="admin-input w-28 text-right text-sm tabular-nums" />
+            </td>
+            <td class="py-2.5 px-3 text-right border-r border-gray-300">
+              <input type="number" value="${st.customers}" step="10" onchange="handleCellEdit('${st.id}', 'customers', this.value)"
+                class="admin-input w-20 text-right text-sm tabular-nums" />
+            </td>
+            <td class="py-2.5 px-3 text-right border-r border-gray-300 bg-gray-100 font-black text-gray-900">
+              ${st.billPrice.toLocaleString()}원
+            </td>
+            <td class="py-2.5 px-3 text-right border-r border-gray-300">
+              <div class="inline-flex items-center justify-end gap-1">
+                <input type="number" value="${st.memberRate}" step="0.5" onchange="handleCellEdit('${st.id}', 'memberRate', this.value)"
+                  class="admin-input w-16 text-right text-sm tabular-nums" />
+                <span class="text-xs font-bold text-gray-600">%</span>
+              </div>
+            </td>
+            <td class="py-2.5 px-3 text-right border-r border-gray-300 bg-coral-brand/10">
+              <input type="number" value="${st.nearMissCount}" step="5" onchange="handleCellEdit('${st.id}', 'nearMissCount', this.value)"
+                class="admin-input w-20 text-right text-sm tabular-nums" />
+            </td>
+            <td class="py-2.5 px-3 text-right border-r border-gray-300">
+              <input type="number" value="${st.hurdleCount}" step="5" onchange="handleCellEdit('${st.id}', 'hurdleCount', this.value)"
+                class="admin-input w-20 text-right text-sm tabular-nums" />
+            </td>
+            <td class="py-2.5 px-3 text-right border-r border-gray-300 bg-lime-brand/15">
+              <input type="number" value="${st.couponCount}" step="5" onchange="handleCellEdit('${st.id}', 'couponCount', this.value)"
+                class="admin-input w-20 text-right text-sm tabular-nums" />
+            </td>
+            <td class="py-2.5 px-3 text-right border-r border-gray-300 font-bold text-gray-800">
+              ${st.simpleCouponRate.toFixed(1)}%
+            </td>
+            <td class="py-2.5 px-3 text-right border-r border-gray-300">
+              <span class="text-base font-black text-gray-900">${st.memberPersuasionRate.toFixed(1)}%</span>
+              <span class="block text-[11px] font-bold text-gray-500">허들전환 ${st.hurdleConversionRate.toFixed(1)}%</span>
+            </td>
+            <td class="py-2.5 px-3 text-center border-r border-gray-300">
+              <span class="px-2.5 py-1 text-xs whitespace-nowrap ${st.badgeStyle}">${st.levelBadge}</span>
+            </td>
+            <td class="py-2.5 px-4">${st.actionTag}</td>
+            <td class="py-2.5 px-3 text-center admin-only no-export border-l border-gray-300">
+              <button onclick="deleteStore('${st.id}')" class="px-2 py-1 bg-gray-200 hover:bg-coral-brand text-gray-900 font-black text-xs border border-gray-900 transition">
+                삭제
+              </button>
+            </td>
+          `;
+        }
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    // =========================================================================
+    // 7. 관리자 데이터 수정 · 추가 · 삭제 · 엑셀 복붙
+    // =========================================================================
+    function updateHurdleConfig() {
+      const hVal = Number(document.getElementById('hurdle-amount-input').value) || 40000;
+      const gVal = Number(document.getElementById('near-gap-input').value) || 10000;
+      window.__DASHBOARD_STATE__.hurdleAmount = hVal;
+      window.__DASHBOARD_STATE__.nearGap = gVal;
+      renderAll();
+    }
+
+    function handleCellEdit(id, field, rawValue) {
+      if (window.__DASHBOARD_STATE__.readOnly) return;
+      const store = window.__DASHBOARD_STATE__.stores.find(s => s.id === id);
+      if (!store) return;
+
+      if (field === 'name') {
+        store.name = String(rawValue).trim() || '미지정매장';
+      } else {
+        store[field] = Number(String(rawValue).replace(/[^0-9.-]/g, '')) || 0;
+      }
+      renderAll();
+    }
+
+    function addEmptyStore() {
+      if (window.__DASHBOARD_STATE__.readOnly) return;
+      const nextIdx = window.__DASHBOARD_STATE__.stores.length + 1;
+      const newId = 'st-' + Date.now();
+      window.__DASHBOARD_STATE__.stores.push({
+        id: newId,
+        name: `신규매장 ${nextIdx}호점`,
+        sales: 30000000,
+        customers: 1200,
+        memberRate: 75.0,
+        nearMissCount: 220,
+        hurdleCount: 450,
+        couponCount: 240
+      });
+      window.__DASHBOARD_STATE__.selectedStoreIds.push(newId);
+      renderAll();
+    }
+
+    function deleteStore(id) {
+      if (window.__DASHBOARD_STATE__.readOnly) return;
+      if (window.__DASHBOARD_STATE__.stores.length <= 1) {
+        alert('최소 1개 이상의 매장이 필요합니다.');
+        return;
+      }
+      window.__DASHBOARD_STATE__.stores = window.__DASHBOARD_STATE__.stores.filter(s => s.id !== id);
+      window.__DASHBOARD_STATE__.selectedStoreIds = window.__DASHBOARD_STATE__.selectedStoreIds.filter(sid => sid !== id);
+      renderAll();
+    }
+
+    function resetToSample() {
+      if (window.__DASHBOARD_STATE__.readOnly) return;
+      window.__DASHBOARD_STATE__.hurdleAmount = 40000;
+      window.__DASHBOARD_STATE__.nearGap = 10000;
+      window.__DASHBOARD_STATE__.stores = JSON.parse(JSON.stringify(INITIAL_SAMPLE_DATA));
+      window.__DASHBOARD_STATE__.selectedStoreIds = window.__DASHBOARD_STATE__.stores.map(s => s.id);
+      document.getElementById('hurdle-amount-input').value = 40000;
+      document.getElementById('near-gap-input').value = 10000;
+      renderAll();
+    }
+
+    function togglePasteModal() {
+      document.getElementById('paste-panel').classList.toggle('hidden');
+    }
+
+    function cleanNum(val) {
+      if (val === undefined || val === null) return 0;
+      return Number(String(val).replace(/[^0-9.-]/g, '')) || 0;
+    }
+
+    function parseTabularText(rawText) {
+      const lines = rawText.trim().split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const parsed = [];
+
+      lines.forEach((line, idx) => {
+        let cols = line.includes('\t') ? line.split('\t') : (line.includes('|') ? line.split('|') : line.split(','));
+        cols = cols.map(c => c.trim());
+        if (cols.length < 5) return;
+
+        const secondDigits = cols[1].replace(/[^0-9]/g, '');
+        if (idx === 0 && (secondDigits === '' || cols[0].includes('매장'))) return;
+
+        const name = cols[0];
+        const sales = cleanNum(cols[1]);
+        const customers = cleanNum(cols[2]);
+        const memberRate = cleanNum(cols[3]);
+
+        let nearMissCount = 0, hurdleCount = 0, couponCount = 0;
+        if (cols.length >= 7) {
+          nearMissCount = cleanNum(cols[4]);
+          hurdleCount = cleanNum(cols[5]);
+          couponCount = cleanNum(cols[6]);
+        } else if (cols.length === 6) {
+          hurdleCount = cleanNum(cols[4]);
+          couponCount = cleanNum(cols[5]);
+          nearMissCount = Math.round(customers * 0.18);
+        } else {
+          couponCount = cleanNum(cols[4]);
+        }
+
+        parsed.push({
+          id: 'st-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+          name, sales, customers, memberRate, nearMissCount, hurdleCount, couponCount
+        });
+      });
+
+      return parsed;
+    }
+
+    function applyExcelPaste(mode) {
+      const rawText = document.getElementById('excel-paste-area').value;
+      const newStores = parseTabularText(rawText);
+      if (newStores.length === 0) {
+        alert('인식된 매장 데이터가 없습니다. 컬럼 구성을 확인해 주세요.');
+        return;
+      }
+
+      if (mode === 'replace') {
+        window.__DASHBOARD_STATE__.stores = newStores;
+      } else {
+        const current = window.__DASHBOARD_STATE__.stores;
+        newStores.forEach(ns => {
+          const idx = current.findIndex(c => c.name === ns.name);
+          if (idx > -1) {
+            current[idx] = { ...ns, id: current[idx].id };
+          } else {
+            current.push(ns);
+          }
+        });
+      }
+
+      window.__DASHBOARD_STATE__.selectedStoreIds = window.__DASHBOARD_STATE__.stores.map(s => s.id);
+      document.getElementById('excel-paste-area').value = '';
+      togglePasteModal();
+      renderAll();
+    }
+
+    function downloadCSVTemplate() {
+      const h = window.__DASHBOARD_STATE__.hurdleAmount || 40000;
+      const g = window.__DASHBOARD_STATE__.nearGap || 10000;
+      const rangeHeader = `${formatManWon(Math.max(0, h - g))}~${formatManWon(h)}원미만객수(명)`;
+      const hurdleHeader = `${formatManWon(h)}원이상객수(명)`;
+
+      const headers = ['매장명', '총매출(원)', '총객수(명)', '회원비중(%)', rangeHeader, hurdleHeader, '쿠폰사용건수(건)'];
+      const rows = window.__DASHBOARD_STATE__.stores.map(s => [
+        s.name, s.sales, s.customers, s.memberRate, s.nearMissCount, s.hurdleCount, s.couponCount
+      ]);
+      const csv = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = '매장별_빌단가_쿠폰점검_취합양식.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function handleCSVUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        document.getElementById('excel-paste-area').value = e.target.result;
+        applyExcelPaste('replace');
+      };
+      reader.readAsText(file, 'UTF-8');
+    }
+
+    // =========================================================================
+    // 8. 이미지(PNG) 저장 & 매장 배포용 읽기 전용(Read-Only) HTML 다운로드
+    // =========================================================================
+    async function exportAsImage() {
+      clearMatrixHighlight();
+      const root = document.getElementById('dashboard-root');
+      document.body.classList.add('exporting');
+      await new Promise(r => setTimeout(r, 150));
+
+      try {
+        const canvas = await html2canvas(root, { scale: 2, backgroundColor: '#F3F4F6', useCORS: true });
+        const link = document.createElement('a');
+        const dateStr = new Date().toISOString().slice(0, 10);
+        link.download = `쿠폰권유점검_리포트_${dateStr}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      } catch (err) {
+        alert('이미지 저장 중 오류가 발생했습니다: ' + err.message);
+      } finally {
+        document.body.classList.remove('exporting');
+      }
+    }
+
+    function exportReadOnlyHTML() {
+      clearMatrixHighlight();
+      const exportState = {
+        ...window.__DASHBOARD_STATE__,
+        readOnly: true
+      };
+
+      const serialized = JSON.stringify(exportState, null, 2);
+      const injectScript = `<script>window.__DASHBOARD_STATE__ = ${serialized};<\/script>`;
+
+      let fullHtml = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+      fullHtml = fullHtml.replace('<head>', `<head>\n  ${injectScript}`);
+
+      const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const dateStr = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `매장배포용_쿠폰권유점검_리포트_${dateStr}.html`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const now = new Date();
+      document.getElementById('report-date-badge').textContent =
+        `DATE // ${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`;
+      renderAll();
+    });
+  </script>
+</body>
+</html>
